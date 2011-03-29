@@ -4,17 +4,16 @@ Flac = function(stream) {
     throw "Not a valid FLAC stream";
   }
   this.stream = stream;
-  this.bitstream = new BitStream(stream, true);
+  this.bitstream = new BitStream(stream, false, true);
 
   var self = this;
 
   var parseMetadataBlock = function() {
     var lastBlock = !!self.bitstream.read(1);
-    print('lastblock? '+lastBlock);
     var blockType = self.bitstream.read(7);
     print('parsing metadata block type: "'+blockType+'"');
     var blockSize = self.bitstream.read(24);
-    print('block size: "'+blockSize.toString(2)+'"');
+    print('block size: "'+blockSize+'"');
     var data = stream.read(blockSize);
     return {
       'last': lastBlock,
@@ -26,7 +25,7 @@ Flac = function(stream) {
   this.metadataBlocks = [];
   do {
     var block = parseMetadataBlock();
-    this.metadataBlocks.push(Flac.blockParsers[block.blockType]);
+    this.metadataBlocks.push(Flac.blockParsers[block.blockType](block.data));
   } while (!block.last);
 
   this.bitstream.seekNextWholeByte();
@@ -216,23 +215,27 @@ Flac = function(stream) {
       'subframes': subframes
     };
   };
+
 };
 
 Flac._parseStreamInfo = function(data) {
-  var offset = 0;
+  var dataBytes = new StringIO(data);
+  var dataStream = new BitStream(dataBytes, false, true);
   var result = {};
-  result.minBlockSize = struct.unpack('>H', data.slice(offset, offset+=2))[0];
-  result.maxBlockSize = struct.unpack('>H', data.slice(offset, offset+=2))[0];
-  var minFrameSize = struct.unpack('>HB', data.slice(offset, offset+=3));
-  result.minFrameSize = (minFrameSize[0]<<8) + minFrameSize[1];
-  var maxFrameSize = struct.unpack('>HB', data.slice(offset, offset+=3));
-  result.maxFrameSize = (maxFrameSize[0]<<8) + maxFrameSize[1];
-  var tmp = struct.unpack('>Q', data.slice(offset, offset+=8))[0];
-  result.sampleRate = tmp>>44;
-  result.noChannels = ((tmp>>41) & 7) + 1;
-  result.bitsPerSample = ((tmp>>36) & 31);
-  result.totalSamples = tmp & 68719476735;
-  result.md5 = data.slice(offset);
+  result.minBlockSize = dataStream.read(16);
+  result.maxBlockSize = dataStream.read(16);
+  result.minFrameSize = dataStream.read(24);
+  result.maxFrameSize = dataStream.read(24);
+  result.sampleRate = dataStream.read(20);
+  result.noChannels = dataStream.read(3);
+  result.bitsPerSample = dataStream.read(5);
+  result.totalSamples = dataStream.read(36);
+  result.md5 = dataBytes.read(16);
+  for (var k in result) {
+    if (result.hasOwnProperty(k)) {
+      print (k+': '+result[k]);
+    }
+  }
   return result;
 };
 
